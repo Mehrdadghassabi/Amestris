@@ -1,3 +1,3 @@
-Code has been inhereted from [here](https://github.com/nyuolab/MedMobile/tree/main/Evaluation)
+prompt: COT for the main model straight for verifier
 
-the Accuracy on MMLU-college_biology is: 0.5972222222222222
+accuracy: 59.72
