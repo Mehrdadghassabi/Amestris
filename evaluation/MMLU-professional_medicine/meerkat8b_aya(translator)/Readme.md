@@ -1,3 +1,3 @@
-Code has been inhereted from [here](https://github.com/nyuolab/MedMobile/tree/main/Evaluation)
+prompt: straight
 
-the Accuracy on MMLU-professional_medicine is: 0.5772058823529411
+accuracy: 57.72
