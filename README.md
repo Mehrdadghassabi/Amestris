@@ -240,16 +240,6 @@ The repo includes test artifacts (`*_test_source.csv` / `*_test_final.csv`). You
 
 ---
 
-## Practical GitHub notes
-
-- **Large files:** If you plan to publish the large CSVs on GitHub, use **Git LFS**.
-  - Otherwise, store them externally and keep only scripts + small samples.
-
-- Consider adding a `.gitignore` for:
-  - backups (`*_BACKUP_*.csv`, `*_backup_before_removal.csv`)
-  - problem reports (`*_problem_rows.csv`, `*_problem_ids.csv`)
-
----
 
 ## Citation
 
