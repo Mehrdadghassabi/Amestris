@@ -26,7 +26,6 @@ The goal of this stage is to produce clean, reproducible CSV artifacts that can 
 
 ### Data artifacts (example filenames)
 
-> **Note on size:** some CSVs are large (hundreds of MB). For GitHub, prefer **Git LFS** or publish the processed artifacts via an external storage location and keep scripts + small examples in the repo.
 
 - `dataset_wmt14_du_en_train_source.csv`  
   Raw/merged source used for training extraction (includes an initial feasibility slice and a larger range).
