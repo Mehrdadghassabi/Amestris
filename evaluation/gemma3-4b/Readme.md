@@ -1,17 +1,17 @@
 # du -> en
-comet with fp8: 0.2217
+comet with fp8: 0.8561
 
-bleu with fp8: 0.1692
+bleu with fp8: 29.23
 
-comet with fp16: 0.8610
+comet with fp16: 0.8576
 
-bleu with fp16: 23.57
+bleu with fp16: 30.67
 
 # en -> du
-comet with fp8: 0.2627
+comet with fp8: 0.8518
 
-bleu with fp8: 0.1414
+bleu with fp8: 4.59
 
 comet with fp16: 0.8559
 
-bleu with fp16: 4.8259
+bleu with fp16: 4.82
