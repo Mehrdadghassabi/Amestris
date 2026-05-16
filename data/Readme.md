@@ -1,209 +1,187 @@
-### Data artifacts (example filenames)
+# English→German Translation Dataset and Preference Pipeline
 
+This repository contains the data-preparation workflow used to build an **English→German** translation dataset from **WMT14**, generate model translations with **Gemma 3 1B**, clean generation artifacts, score outputs with automatic metrics, and prepare the data for **preference-based fine-tuning**.
 
-- `dataset_wmt14_du_en_train_source.csv`  
-  Raw/merged source used for training extraction (includes an initial feasibility slice and a larger range).
+The pipeline in this version is **English→German only**.  
+No German→English data is included in the current method.
 
-- `dataset_wmt14_*_train_before_filter.csv`  
-  Intermediate output after initial constraints (e.g., max-length filtering) and MT generation.
+## Project summary
 
-- `dataset_wmt14_*_train_with_scores.csv`  
-  Output after metric scoring (COMET + BLEU).
+The workflow follows these stages:
 
-- `dataset_wmt14_*_train_kept_20pct_thr_<X>.csv`  
-  Bottom-20% COMET subset used to build **rejected** candidates.
+1. Download a working subset of **200,000 WMT14 English→German entries**.
+2. Extract the English source column and run **Gemma 3 1B** in **Kaggle** using **FP32** inference.
+3. Save the raw model outputs to `wmt14_en_de_mt_raw.csv`.
+4. Clean residual generation artifacts with `Remover.py`.
+5. Score the cleaned translations with **COMET**, **BLEU**, and **BLEURT** using `Comet_Score.py`.
+6. Identify low-quality translations with `Distribution finder.py` using the **COMET** distribution.
+7. Add a standardized translation prompt with `Pompt_Adder.py`.
+8. Produce the final cleaned, scored, prompt-formatted artifact for downstream preference learning.
 
-- `dataset_wmt14_*_train_final.csv`  
-  Final preference-formatted training CSVs (preferred/rejected columns) ready for training.
-
-- `dataset_wmt14_*_test_source.csv`, `dataset_wmt14_*_test_final.csv`  
-  Test split artifacts for evaluation (scored with the same pipeline).
+The final dataset is intended for **preference-optimization training** workflows that use **preferred / rejected** examples, such as DPO-style pipelines or other pairwise optimization methods.
 
 ---
 
-## Data schema conventions
+## Data source
 
-Our pipeline assumes CSVs with a unique row identifier and bilingual text columns.
+The starting point for this dataset is **WMT14 English→German**.
 
-Typical columns (names may vary; the scripts allow mapping via CLI flags):
+From the larger corpus, a subset of **200,000 entries** was downloaded and used as the source pool for generation and filtering. The English source sentences were passed through **Gemma 3 1B** to generate machine translations in German.
+
+---
+
+## Processing pipeline
+
+### 1. Raw model generation
+
+The English source sentences were translated with **Gemma 3 1B** on Kaggle with **FP32** precision.
+
+**Raw output file:**
+- `wmt14_en_de_mt_raw.csv`
+
+This file contains the model-generated translations before artifact cleaning.
+
+### 2. Artifact removal
+
+Some generated rows contained residual formatting artifacts, including tokens such as:
+
+- `<end_of_turn>`
+- leading numbered prefixes such as `1.` or `2.`
+
+These artifacts were removed using `Remover.py`, producing:
+
+- `wmt14_en_de_mt_raw_cleaned_Before_Comet.csv`
+
+### 3. Metric scoring
+
+The cleaned file was then processed by `Comet_Score.py`, which adds:
+
+- `comet_score`
+- `bleu_score`
+- `bleurt_score`
+
+A system-average summary row is also appended, typically identified as:
+
+- `__SYSTEM_AVG__`
+
+The output after scoring was:
+
+- `wmt14_en_de_mt_raw_cleaned_After_Comet.csv`
+
+### 4. Low-quality selection
+
+To build a rejected pool for preference learning, the scored file was passed through `Distribution finder.py`.
+
+This script analyzes the **COMET** score distribution and applies an **elbow-based threshold** to retain the weaker translations. In the run described here, the output file was:
+
+- `wmt14_en_de_mt_raw_cleaned_ELBOW_low_thr_0.6349_kept_13.0pct.csv`
+
+This selection step is used to isolate the model outputs that should serve as **rejected** candidates in the downstream preference dataset.
+
+### 5. Prompt standardization
+
+A consistent instruction prompt was added with `Pompt_Adder.py` to make the translation task uniform for downstream training.
+
+The script prepends a translation instruction prompt to the source text and renames the source text column to a training-friendly field name.
+
+The final artifact produced was:
+
+- `wmt14_en_de_mt_raw_cleaned_ELBOW_low_thr_0.6349_kept_13.0pct_with_prompt_Final.csv`
+
+---
+
+## Expected schema
+
+Column names are kept flexible across the scripts, but the typical structure is:
 
 - `id` — unique row identifier
-- `du` — German sentence (Deutsch)
-- `en` — English sentence
-- `mt` or `MT` — machine translation output from Gemma-3 4B
-- `comet_score` — per-segment COMET score (added by `mt_score_csv.py`)
-- `bleu_score` — sentence-level BLEU score (added by `mt_score_csv.py`)
+- `en` — English source sentence
+- `de` — German reference translation, if available in the source file
+- `mt` / `MT` / `answer` — machine translation output from Gemma 3 1B
+- `comet_score` — segment-level COMET score
+- `bleu_score` — segment-level BLEU score
+- `bleurt_score` — segment-level BLEURT score
+- `PromptandText` — prompt plus source text, created by the prompt-adder step
 
-The *final* training CSVs used for preference learning typically include:
+For preference-learning exports, the final training format typically uses fields such as:
 
-- `prompt` or prompted-source text (optional)
-- `preferred` — preferred translation
-- `rejected` — rejected translation
-- plus any metadata needed for training (ids, direction tags, scores)
+- `preferred`
+- `rejected`
 
-Because teams vary in column naming, all scripts expose flags to specify column names.
-
----
-
-## Pipeline overview
-
-The full data-prep pipeline is:
-
-1. **Extract a working subset** from WMT14 German↔English.
-2. **Apply length constraints** (e.g., max 40 words) to keep examples within a desired range.
-3. **Generate MT outputs** using Gemma-3 4B (batched API calls).
-4. **Filter translation failures** using `filter_mt_language_leakage.py`.
-5. **Score translations** with COMET + BLEU using `mt_score_csv.py`.
-6. **Select low-quality outputs** (bottom 20% COMET) as **rejected** candidates via `select_bottom_comet.py`.
-7. **Add consistent prompts** (optional but recommended) using `add_translation_prompt.py`.
-8. **Assemble final preference pairs** into `*_train_final.csv` for training.
-
-Steps (3) and (8) depend on your MT inference/training stack (API vs. local inference, preference format, etc.). This repo provides the utilities used for filtering/scoring/selection and prompt standardization.
+In this project, the **human reference translation** is the natural choice for the **preferred** side, while the filtered Gemma output is used as the **rejected** side.
 
 ---
 
 ## Installation
 
-Recommended environment:
+The processing scripts were written for Python 3.10+.
 
-- Python **3.10+**
-- CPU is sufficient for BLEU; **COMET is faster with CUDA**, but can run on CPU.
-
-Install dependencies:
+Recommended packages:
 
 ```bash
 pip install -U pip
-pip install pandas numpy matplotlib torch sacrebleu "unbabel-comet>=2.0.0"
+pip install pandas numpy matplotlib torch sacrebleu "unbabel-comet>=2.0.0" evaluate
 ```
 
-> If you do not have a GPU, COMET will run on CPU (slower). You can force CPU with `--gpus 0`.
+### Notes on BLEURT
+
+BLEURT may not be available in every environment. In particular, it can be difficult to install on newer Python versions.
+
+- If BLEURT loads successfully, the script computes real BLEURT scores.
+- If BLEURT cannot be loaded, the script falls back gracefully and fills the BLEURT column with `NaN`, while still computing COMET and BLEU.
 
 ---
 
-## Usage
+## Reproducibility notes
 
-### 1) Filter MT language leakage (failed / untranslated outputs)
+To reproduce the same artifact sequence:
 
-For **German → English** MT outputs: undesired leakage is typically **German** inside the English MT output.
+1. Start from the same **WMT14 English→German** source split and extraction range.
+2. Generate translations with **Gemma 3 1B** using the same Kaggle/FP32 setup.
+3. Clean generation artifacts before scoring.
+4. Score with COMET, BLEU, and BLEURT.
+5. Apply the same elbow-based COMET filtering strategy.
+6. Add the standardized prompt.
+7. Convert the resulting file into the preference format required by your downstream training code.
 
-```bash
-python filter_mt_language_leakage.py \
-  --input dataset_wmt14_du_to_en_train_before_filter.csv \
-  --mode german \
-  --threshold 0.20 \
-  --text-column MT \
-  --id-column id
-```
-
-For **English → German** MT outputs: undesired leakage is typically **English** inside the German MT output.
-
-```bash
-python filter_mt_language_leakage.py \
-  --input dataset_wmt14_en_to_du_train_before_filter.csv \
-  --mode english \
-  --threshold 0.20 \
-  --text-column MT \
-  --id-column id
-```
-
-Outputs (written next to the input file):
-
-- `*_backup_before_removal.csv` — backup of the original
-- `*_<mode>_problem_rows.csv` — problematic rows with diagnostic counts/ratios
-- `*_<mode>_problem_ids.csv` — IDs of problematic rows
-- the input file is optionally rewritten with problematic rows removed (disable with `--no-rewrite-input`)
-
-**Threshold guidance:** `0.20` (20%) is a reasonable starting point; tune depending on how strict you want the leakage filter.
+Because the elbow threshold depends on the score distribution, the exact cutoff may change if the generation model, prompt, or preprocessing changes.
 
 ---
 
-### 2) Score MT outputs with COMET + BLEU
+## File naming convention
 
-Score a German → English file where:
+The repository uses descriptive filenames that reflect the processing stage:
 
-- source column: `du`
-- reference column: `en`
-- MT column: `mt` (or set `--mt_col MT` if your column is uppercase)
-
-```bash
-python mt_score_csv.py \
-  --csv dataset_wmt14_du_to_en_train_after_filter.csv \
-  --src_col du \
-  --ref_col en \
-  --mt_col MT \
-  --id_col id
-```
-
-Score an English → German file:
-
-```bash
-python mt_score_csv.py \
-  --csv dataset_wmt14_en_to_du_train_after_filter.csv \
-  --src_col en \
-  --ref_col du \
-  --mt_col MT \
-  --id_col id
-```
-
-What the script does:
-
-- Adds per-row `comet_score` and `bleu_score`
-- Appends a final row with system-level scores (id `__SYSTEM_AVG__` when an id column exists)
-- Removes a previous summary row automatically if the file was scored before
-
-By default, the input CSV is overwritten. Use `--output_csv` to write to a new file.
+- `*_raw.csv` — raw model output
+- `*_cleaned*.csv` — artifact-cleaned output
+- `*_After_Comet.csv` — scored output
+- `*_ELBOW_*kept_*pct.csv` — low-quality subset selected from the COMET distribution
+- `*_with_prompt_Final.csv` — final prompt-formatted artifact
 
 ---
 
-### 3) Select the bottom 20% by COMET (rejected candidates)
+## Recommended downstream use
 
-```bash
-python select_bottom_comet.py \
-  --input dataset_wmt14_du_to_en_train_with_scores.csv \
-  --column comet_score \
-  --keep-fraction 0.20
-```
+This dataset is intended for **preference-based fine-tuning** rather than standard supervised translation only.
 
-This writes a new CSV:
+Typical downstream uses include:
 
-- `*_bottom_0.20_thr_<quantile>.csv`
+- building `preferred` / `rejected` pairs,
+- training a pairwise preference model,
+- running DPO-style optimization,
+- evaluating translation quality under preference-learning objectives.
 
-Notes:
-
-- The script also reports a “knee” threshold as a **diagnostic reference**, but selection is **strictly quantile-based**.
-- By default, **NaN scores are kept** (can be changed with `--drop-nans`).
-- Plots are enabled by default; disable on servers with `--no-plots`.
+The final CSV is therefore a prepared intermediate artifact, not merely a raw translation dump.
 
 ---
 
-### 4) Add a strict translation prompt (optional, recommended)
+## Repository contents
 
-German → English (defaults to column `du`):
+See the `scripts/` documentation for a detailed explanation of:
 
-```bash
-python add_translation_prompt.py \
-  --input dataset_wmt14_du_to_en_train_kept_20pct_thr_0.7771.csv \
-  --direction de-en
-```
+- `Remover.py`
+- `Comet_Score.py`
+- `Distribution finder.py`
+- `Pompt_Adder.py`
 
-English → German (defaults to column `en`):
-
-```bash
-python add_translation_prompt.py \
-  --input dataset_wmt14_en_to_du_train_kept_20pct_thr_0.7624.csv \
-  --direction en-de
-```
-
-This writes `*_with_prompt.csv` next to the input file.
-
----
-
-## Reproducing the paper artifacts
-
-To reproduce the exact artifact set used in the paper:
-
-1. Start from the same WMT14 split and extraction range used in our study.
-2. Apply the same preprocessing constraints (e.g., max-length filtering).
-3. Produce MT outputs with **Gemma-3 4B** using the same prompting strategy.
-4. Run leakage filtering → scoring → bottom selection using the commands above.
-5. Construct the final preference CSVs (`*_train_final.csv`) in your chosen format.
+Each script is documented with its role, inputs, outputs, and key implementation behavior.
