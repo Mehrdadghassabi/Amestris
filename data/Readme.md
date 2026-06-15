@@ -3,7 +3,19 @@
 This repository contains the data-preparation workflow used to build an **English→German** translation dataset from **WMT14**, generate model translations with **Gemma 3 1B**, clean generation artifacts, score outputs with automatic metrics, and prepare the data for **preference-based fine-tuning**.
 
 The pipeline in this version is **English→German only**.  
-No German→English data is included in the current method.
+
+you can download the Data from these links:
+
+https://drive.google.com/file/d/1nUV9zA8s5W5nkRC3V_bCiCBGTijkd2Wg/view?usp=drivesdk
+
+https://drive.google.com/file/d/1Srku-DuWImZDkHOgRJg1G5SNYhJumnU-/view?usp=drivesdk
+
+https://drive.google.com/file/d/1Dut2sFThE6YCflsIB-IctiGjxPGh-nxq/view?usp=drivesdk
+
+https://drive.google.com/file/d/110x7m6l_y1wCxw732Tdo7u-65tZWPApR/view?usp=drivesdk
+
+https://drive.google.com/file/d/16y_zFE68jdYOzo1lzIZjuZYuS6LQHsyR/view?usp=drivesdk
+
 
 ## Project summary
 
