@@ -29,7 +29,7 @@ We propose a DPO-based framework to improve the translation ability of a baselin
 We evaluated our DPO-based framework on the English-to-German translation task using the WMT14 dataset and the compact Gemma3-1B model as the baseline, producing the trained student model Amestris-1B.
 notice that in all of the mentioned metrics higer value means better performance except for TER which is reverse.
 
-|                       | gemma3-1b (baseline) | amestris-1b |
+|                       | gemma3-1b (baseline) | amestris-1b-dpo |
 |-----------------------|--------------------|---------------------------|
 | **BLEU**  | **0.1572**           | 15.00                  | 
 | **COMET22**      | 0.7698          | **0.7810**        | 
