@@ -1,6 +1,5 @@
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
-% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{algorithmic}
@@ -12,7 +11,7 @@
 		T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
 	
-\title{Backtranslation Augmented Direct Preference Optimization for Neural Machine Translation}
+\title{Back Translation Augmented Direct Preference Optimization for Neural Machine Translation}
 	
 \author{\IEEEauthorblockN{1\textsuperscript{st} Mehrdad Ghassabi}
 		\IEEEauthorblockA{\textit{Faculty of Computer Engineering} \\
@@ -57,74 +56,82 @@
 	
 	\maketitle
 	
-	\begin{abstract}
-Modern neural machine translation (NMT) systems predominantly rely on supervised parallel data for training. While this approach has led to significant advancements, persistent translation errors remain a challenge. This paper introduces a novel post-training paradigm leveraging reinforcement learning (RL) to effectively address and rectify these inaccuracies. Our proposed framework is designed to function with a general text corpus and iterative feedback from an expert translator, which can be either human or AI-driven, the core of our method involves generating multiple translation samples from a “student” model. By analyzing these diverse outputs, we identify specific model errors. To correct these identified mistakes, we employ a combination of back-translation and Direct Preference Optimization (DPO). for our empirical evaluation, we concentrate on the English-to-German translation, a representative high-resource language pair. We implement the RL-based post-training specifically through Direct Preference Optimization (DPO). Applying our DPO-driven framework to the Gemma3-1B model has resulted in a substantial improvement in translation quality. Specifically, the COMET\_KIWI22 score for English-to-German translation on the WMT14 test set has been elevated from 0.703 to 0.747. These results underscore the efficacy of DPO as an efficient and stable method for enhancing pre-trained NMT models through preference-based post-training.
-	\end{abstract}
+\begin{abstract}
+Neural machine translation systems can produce inaccurate translations even after supervised fine-tuning, motivating the use of preference-based post-training. However, the effectiveness of Direct Preference Optimization (DPO) partly depends on the quality of its preference pairs. This paper proposes a back-translation-based framework for constructing quality-controlled preference data for English-to-German translation. Using WMT14 parallel data, we treat each German sentence $s$ as the original text and its aligned expert-produced English translation $T(s)$ as the input to Gemma3-1B. The student translates $T(s)$ back into German, producing $\hat{T}(T(s))$, thereby learning the reverse translation direction of the expert translator. The original German sentence serves as the preferred response, while the generated back-translation is used as the rejected response only when its reference-based COMET22 score falls below an elbow-derived threshold of 0.72330. This process yields approximately 27,000 preference pairs from 100,000 candidates. We compare the baseline, standalone DPO, supervised fine-tuning (SFT), and sequential DPO+SFT. On the WMT14 test set, DPO improves five of six automatic evaluation metrics over the baseline, including COMET22 (0.7698 to 0.7810) and COMET-KIWI22 (0.7031 to 0.7476), although BLEU decreases (0.1572 to 0.1500). Sequential DPO+SFT achieves the best results on five metrics, including BLEU (0.1718), COMET22 (0.8119), and COMET-KIWI22 (0.7790), while standalone DPO achieves the best TER (0.7621). In blinded human evaluation, DPO receives a slightly higher preference than the baseline (22.2\% versus 19.6\%), while 58.2\% of outputs are judged comparable. These findings suggest that combining reverse-direction preference learning with supervised fine-tuning is promising, although further controlled experiments are needed to isolate the contribution of COMET22-based filtering.
+\end{abstract}
 	
 	\begin{IEEEkeywords}
-		Neural Machine Translation, Direct Preference Optimization, Backtranslation, Reinforcement Learning, Small Language Models
+		Neural Machine Translation, Direct Preference Optimization, Back-Translation, Reinforcement Learning, Small Language Models
 	\end{IEEEkeywords}
 	
-	\section{introduction}
-Machine Translation has a long and evolving history within the broader field of artificial intelligence. from the early era of Rule-Based Machine Translation (RBMT)—where linguistic expertise and handcrafted grammars dictated performance—to the emergence of statistical and neural paradigms powered by deep learning, translation models have undergone a remarkable transformation. \cite{b1} 
+	\section{Introduction}
+Machine translation has evolved from rule-based systems relying on linguistic expertise and handcrafted grammars to statistical approaches and, more recently, neural methods based on deep learning. This progression has substantially improved translation capabilities, with neural machine translation (NMT) becoming the dominant paradigm through its use of large parallel corpora. Nevertheless, NMT systems can still omit content, mistranslate terminology, or produce unnatural and incomplete translations, even when trained on substantial parallel data. These limitations motivate post-training approaches that refine pretrained models beyond their initial supervised learning objectives. \cite{b1}
 
-Nowadays, most contemporary Neural Machine Translation (NMT) systems rely heavily on supervised training using large-scale parallel corpora. while these approaches have achieved impressive results, they frequently exhibit persistent translation errors collectively known as translationese. these errors stem from systematic biases learned from the training data, often resulting in outputs that sound unnatural or fail to capture the full nuance and fluency expected in high-quality human translation. 
+Preference-based optimization provides a way to refine models using comparative quality feedback in addition to standard supervised objectives. Direct Preference Optimization (DPO) is particularly attractive because it learns directly from preference pairs without a separately trained reward model, increasing the relative likelihood of preferred responses. \cite{b2} Although DPO has been widely studied for language-model alignment, its effectiveness depends in part on the quality and construction of preference pairs. Its benefits in machine translation, especially compared with conventional supervised fine-tuning (SFT), therefore remain an important empirical question.
 
-As researchers have sought effective ways to overcome these limitations, reinforcement learning (RL) has emerged as a promising post-training strategy. RL enables models to refine their behavior based on quality feedback signals rather than solely on supervised objectives. In particular, Direct Preference Optimization (DPO) has recently gained significant attention as a powerful and stable RL paradigm. unlike traditional RL methods that require training a separate reward model, DPO directly optimizes the model using comparative preference data, aligning its outputs with human or expert judgments in a computationally efficient manner. \cite{b2} despite its success in general language modeling tasks, the application of DPO to machine translation remains relatively underexplored. Existing studies are limited in scope and often fail to fully address translation-specific challenges such as fluency, adequacy, and domain adaptability. 
+We propose a back-translation-based framework for constructing quality-controlled preference pairs. Conventional back-translation is often used to create synthetic parallel examples for supervised training; here, the student-generated translation instead becomes the rejected side of a preference pair, while the trusted target-language text is preferred. The framework can use either monolingual data translated by an external expert (human or AI) or an existing parallel corpus, in which the human reference supplies the trusted target-side response. Our experiments use the latter setting with WMT14 English--German data: the student translates each English sentence into German, and its hypothesis is scored against the aligned reference with COMET22. Only hypotheses below the knee-point threshold are retained as rejected responses; the reference remains the preferred response.
+\footnote{All code, models, trained checkpoints, and experimental resources associated with this work are publicly available at github.com/mehrdadghassabi/Amestris to support reproducibility and further research.}
 
-In this work, we introduce a novel DPO-based framework specifically designed for machine translation. our approach uniquely integrates back-translation as a synthetic data generation mechanism to create high-quality preference pairs. critically, the method requires only a general text corpus and an expert translator—whether human, an AI system, or a dataset containing source texts and their ground-truth translations. this design provides an effective post-training paradigm for reducing certain translation errors and typographical mistakes that the model may have acquired during training.
-\footnote{All code, models, trained checkpoints, and experimental resources associated with this work have been made publicly available at github.com/mehrdadghassabi/Amestris to facilitate reproducibility and further research in the community. }
+We evaluate the framework with Gemma3-1B on English-to-German translation using approximately 27,000 filtered pairs. DPO improves five of six automatic metrics over the baseline, although BLEU decreases; in the direct ablation, SFT outperforms standalone DPO on five metrics, while DPO has the best TER. Sequential DPO+SFT achieves the best scores on five metrics. Human evaluation shows only a small preference difference between DPO and the baseline (22.2\% versus 19.6\%), with 58.2\% of outputs judged comparable. The study addresses two related questions: whether DPO can improve a compact translation model when trained on reference-guided preference pairs, and how such pairs can be restricted to lower-scoring student hypotheses. Our contribution is the preference-data construction strategy and its evaluation in this setting, not a new DPO objective or a claim that DPO alone is superior to SFT. The experiments also do not isolate the causal effect of COMET22 filtering.
 
-To validate the effectiveness of our proposed method, we applied it to the English$\rightarrow$German translation task. using the gemma-3-1b model \cite{b3} as our baseline,within only training on approximately 27000 preference pairs our DPO-driven post-training achieves a substantial \textbf{0.044} improvement in COMET\_KIWI22 score \cite{b4}. this gain demonstrates consistent enhancements in translation fidelity, fluency, and overall quality. These results highlight that Direct Preference Optimization, when combined with back-translation and targeted preference feedback, offers a promising and practical pathway for advancing Neural Machine Translation performance beyond traditional supervised fine-tuning.
+\section{Related Work}
+Related NMT research has explored synthetic-data generation, reinforcement learning (RL), and preference optimization. These approaches differ in whether they use synthetic parallel examples, explicit reward models, or pairwise comparisons to guide model updates.
 
+Luu et al. \cite{b5} studied English-to-Basque translation using monolingual Basque data. They first translated Basque documents into English with a large model to create synthetic parallel data. After SFT, they generated Basque hypotheses from the English side and paired them with the original human-written Basque sentences as rejected and preferred responses, respectively. This pair structure is close to ours; our methodological addition is to screen each student-generated hypothesis with COMET22 before admitting it as a rejected response. Their preliminary experiments compare five SFT/DPO allocations using 20,000 examples and find that SFT-only performs strongest overall, while adding DPO yields small or inconsistent changes. Their rejected hypotheses, generated by NLLB-3.3B, are not COMET-screened at the preference-pair construction stage. This does not mean their pipeline has no filtering: they separately clean the synthetic training corpus and use quality estimation to select some evaluation documents. The relevant difference is the absence of COMET screening of rejected hypotheses. Their language pair, data setting, and model also differ from ours; our own filtering decisions have not been independently validated by human annotators.
 
-         \section{previous studies}
-Recent progress in neural machine translation (NMT) has increasingly investigated the use of synthetic data generation and preference optimization techniques to enhance translation quality. this section surveys prior work that applies reinforcement learning (RL), Direct Preference Optimization (DPO), and related alignment strategies, emphasizing their key contributions as well as their limitations in comparison to our proposed approach.
+Zhang et al. \cite{b6} used in-domain source-side monolingual data and a ranking-based reward model trained on a small in-domain parallel set to guide RL fine-tuning of a pretrained NMT model. Their approach demonstrates the value of monolingual data and quality feedback for domain adaptation. Unlike our method, it relies on a learned reward model, whose judgments may influence the optimization, rather than direct preference optimization. The reward-model stage also introduces an additional component that must be trained before it can guide the translation model.
 
-Luu et al. \cite{b5} proposed a method for machine translation of low-resource languages by leveraging monolingual data and large language models, with a case study on English-to-Basque. 
-starting with monolingual Basque data, the authors apply back-translation using a stronger reverse-direction LLM to generate synthetic parallel data, followed by fine-tuning an LLM-based MT model with both supervised fine-tuning (SFT) and Direct Preference Optimization (DPO). 
-this study is the most similar to ours, as it explicitly incorporates back-translation within a preference-based training pipeline involving DPO on synthetic data. 
-however, a key limitation is that the authors did not perform any detailed analysis or filtering of the preferred-rejected pairs to ensure high-quality contrasts suitable for effective preference learning. 
-as a result, they reported only marginal improvements from the DPO stage, underscoring the importance of careful preference pair construction---a gap our work directly addresses through back-translation augmented DPO with rigorous preference pair validation.
+Uhlig et al. \cite{b7} proposed Direct Quality Optimization (DQO), a DPO variant that uses a pretrained translation-quality-estimation model as a proxy for human preference in an online optimization procedure. By contrast, our COMET22 score is used offline to select rejected hypotheses during data construction, not as an online reward or replacement for the DPO objective. Thus, the metric determines which examples enter the training set, while the DPO loss remains the optimization objective. DQO reports gains across multilingual models in automatic metrics and human evaluation.
 
-Zhang et al. \cite{b6} presented a domain adaptation technique for NMT employing reinforcement learning and in-domain source monolingual data. Initially, they trained a ranking-based reward model using a small in-domain parallel dataset. this model was then utilized to direct the RL fine-tuning of a pre-trained NMT model, effectively instilling domain-specific knowledge. while this method showcases the efficacy of monolingual data through RL signals, it employs conventional RL frameworks instead of direct preference optimization. a key criticism of their approach is that the evaluation is heavily influenced by the ranking-based reward model, potentially leading to a policy that is easily biased towards this reward model.
+Vajda et al. \cite{b8} constructed synthetic English-to-Slovene preference pairs by comparing translations generated by different LLMs, using heuristics to identify obvious errors and metrics such as COMET to distinguish output quality. Their approach compares independently generated hypotheses and selects the preferred output from those candidates. Our setting instead fixes the aligned human reference as preferred and uses COMET22 to screen one student-generated hypothesis for the rejected response; it does not rank two model outputs. Vajda et al. report COMET gains and greater consistency in avoiding language and formatting errors relative to their baseline generators.
 
-Uhlig et al. \cite{b7} presented a cross-lingual human-preference alignment method for neural machine translation using Direct Quality Optimization (DQO). 
-building on RLHF and DPO principles, they introduce a batched online variant of DPO that uses a pre-trained translation quality estimation (QE) model---trained on human preference data---as a proxy for human judgments. 
-their method addresses task-data mismatches in NMT by performing task alignment, yielding improvements across multilingual models as measured by BLEU, COMET, and other evaluations.
+Overall, prior work differs in how it creates preference signals: Luu et al. use human references and generated hypotheses without COMET screening at the pair-construction stage; Vajda et al. compare outputs from two LLMs; and DQO uses quality estimation during optimization. Our specific addition is an offline COMET22 threshold applied to the student hypothesis before DPO pair construction. The metric is used to decide whether the student hypothesis enters the preference dataset, not to choose between two model-generated candidates, revise the human reference, or provide an online reward during optimization. Although the resulting pipeline improves five of six automatic metrics over our baseline, the absence of a matched unfiltered-DPO experiment and an independent human validation of the filtering decisions means that these gains cannot be attributed specifically to COMET22 screening.
 
-Vajda et al. \cite{b8} explored improving LLMs for machine translation using synthetic preference data. 
-using Slovene as a case study, they improve an instruction-tuned LLM via DPO on a programmatically curated synthetic dataset. 
-they generate preference pairs by translating English wikipedia articles with two different LLMs and ranking the outputs using heuristics combined with automatic metrics such as COMET. 
-the resulting fine-tuned model outperforms the baseline generators, achieving gains in COMET scores and better consistency in avoiding language and formatting errors.
-
-Shen et al. \cite{b9} introduced a post-editing guided reinforcement learning approach for machine translation. 
-their PEGRL framework is a two-stage RL method that treats post-editing as an auxiliary task to stabilize training and provide guided optimization signals for the primary translation objective. 
-by leveraging post-edited outputs, the method enhances overall translation quality through more robust RL signals.
-
+Shen et al. \cite{b9} proposed post-editing-guided reinforcement learning (PEGRL), a two-stage framework that treats post-editing as an auxiliary task. Post-edited outputs are used to stabilize training and provide additional optimization signals for the primary translation objective.
 
 \section{Methodology}
-We propose a Direct Preference Optimization (DPO)-based framework aimed at improving the translation capability of a baseline language model, referred to as the \textit{student model} \( \pi_\theta \). the main objective is to construct a high-quality preference dataset that captures fine-grained differences in translation quality and subsequently fine-tune the student model using DPO so that its outputs align more closely with expert-level translations. an overview of the entire pipeline, from corpus preparation to DPO fine-tuning, is illustrated in Figure \ref{fig:method}.
+Our framework constructs quality-controlled preference pairs and uses them to fine-tune a baseline language model, or \textit{student model} $\pi_\theta$. It contrasts a trusted target-side translation with a student output estimated to have lower quality. Figure~\ref{fig:method} summarizes corpus preparation, candidate generation, filtering, and DPO fine-tuning.
 
-Formally, we define the preference dataset as $\mathcal{D} = \{(x, y_w, y_l)\}$, where \( x \) denotes the translation instruction concatenated with the input text, \( y_w \) represents the preferred translation (the ``winner''), and \( y_l \) denotes the less-preferred translation (the ``loser''). each triplet provides a comparative supervision signal indicating which output better satisfies translation quality criteria. this pairwise signal is later exploited by DPO to increase the likelihood of preferred translations relative to inferior ones.
+The preference dataset is $\mathcal{D}=\{(x,y_w,y_l)\}$, where $x$ is the translation instruction and input, $y_w$ is the preferred response, and $y_l$ is the rejected response. The preferred response is an aligned human translation; the rejected response is generated by the student and retained only when its COMET22 score against the source and reference is sufficiently low. DPO is trained on both responses in each pair, contrasting the trusted reference with the lower-scoring hypothesis. Thus, the method does not discard the low-scoring translation from training: it deliberately uses that translation as the rejected side of the preference pair. The source sentence and translation instruction are shared by both responses, allowing DPO to compare the two candidate translations under the same input.
 
-To construct such preference pairs, we start with an available monolingual corpus in the source language. the corpus is segmented into individual sentences, and each sentence  \(s\) is assigned to an expert translator, which defines a translation function  \(T(\cdot)\). the expert translator generates a high-quality translation  \(T(s)\) in the target language. to evaluate the translation competence of the student model, we perform back-translation: the student model  \(\pi_\theta\) defines a back-translation function  \(\hat{T}(\cdot)\). given  \(T(s)$ as input, the student model produces  \(\hat{T}(T(s))\) in the source language.
+In the general setting, a monolingual corpus is segmented into sentences, and each sentence $s$ is translated by an expert translator $T(\cdot)$. The student $\pi_\theta$ then translates $T(s)$ back into the original language, producing $\hat{T}(T(s))$. The expert translator may be human or AI-based. An existing parallel corpus supplies the same information without a separate expert-translation step. In our WMT14 experiment, the German reference is $s$ and its aligned English sentence is $T(s)$; the student therefore translates English into German, the same direction used in evaluation (Section~\ref{sec:eval}). This distinction resolves the direction ambiguity: the German sentence is the preferred output, not the model input.
 
-
-The quality of the back-translated sentence $\hat{T}(T(s))$ is first evaluated using the BLEU score \cite{b10}, computed against the original sentence $s$. If this BLEU score is higher than a predefined threshold, the back-translation is deemed sufficiently faithful, and the corresponding sample is excluded from preference construction, since our goal is to collect cases where the student policy model fails to translate appropriately,  the low-BLEU samples are likely to reflect weaknesses in the student model’s translation behavior, and they are used to form preference pairs.
- for such cases, we add the triplet to our preference dataset $\mathcal{D}$ as:
+For each candidate, we compute the reference-based score $q(s)=\operatorname{COMET22}(T(s),\hat{T}(T(s)),s)$ using the English source, the student's German hypothesis, and the aligned German reference. We retain the candidate only when $q(s)<\tau$, where $\tau$ is the knee point of the score distribution. The resulting preference triplet is
 \[
-x = \text{prompt} + T(s) \qquad
-y_w = s \qquad
-y_l = \hat{T}(T(s)) 
+\begin{aligned}
+x &= \text{prompt} + T(s),\\
+y_w &= s, \qquad y_l = \hat{T}(T(s)), \qquad q(s)<\tau.
+\end{aligned}
 \]
-Here, $y_l$ corresponds to the student's flawed back-translation, $y_w$ is the correct source sentence, and $x$ consists of the translation instruction (asking the model to translate the given sentence from the source language to the target language) concatenated with the expert-produced translation $T(s)$. These triplets collectively form the preference dataset used for optimization.
+Here, $x$ contains the instruction to translate $T(s)$ into German, $y_w=s$ is the German reference, and $y_l=\hat{T}(T(s))$ is the student's German hypothesis. Candidates with $q(s)\geq\tau$ are excluded because they are not part of the lower-scoring group targeted for rejected responses. In this WMT14 experiment, COMET22 is the sole filtering criterion; BLEU-based filtering is not applied.
 
+Table~\ref{tab:example_pair} shows an actual WMT14 preference pair: the English source is the input, the aligned German reference is preferred, and the student's German hypothesis is rejected. The hypothesis retains an English phrase, mistranslates ``my Group'' and ``object to that,'' and contains grammatical errors.
 
-Finally, once the curated dataset $\mathcal{D}$ reaches sufficient scale (surpassing a threshold),
-the student model $\pi_\theta$ is fine-tuned using Direct Preference Optimization (DPO) with LoRA (Low-Rank Adaptation) \cite{b11}.
-DPO directly optimizes the model based on pairwise preferences, mathematically increasing the probability of preferred outputs relative to dispreferred ones. this approach bypasses the need for a separate reward model, streamlining the training pipeline. concurrently, LoRA provides a parameter-efficient adaptation mechanism, significantly reducing computational and memory requirements by updating only a small set of low-rank matrices rather than the full set of model parameters, thereby enabling efficient fine-tuning of large language models.
-the DPO loss for a single triplet is defined as
+\begin{table*}[t]
+\centering
+\caption{Illustrative English-to-German preference pair.}
+\label{tab:example_pair}
+\small
+\begin{tabular}{|p{0.17\textwidth}|p{0.77\textwidth}|}
+\hline
+\textbf{Field} & \textbf{Example} \\
+\hline
+Language model input  ($x$)  & Translate the following English sentence into German. 
+
+Madam President, if the vote records correctly how my Group voted I shall not, and cannot, object to that.\\
+\hline
+Preferred response ($y_w$) & Frau Präsidentin, wenn aus der Abstimmung einwandfrei hervorgeht, wie meine Fraktion abgestimmt hat, dann werde und kann ich nichts dagegen sagen. \\
+\hline
+Rejected response ($y_l$) & Madam Präsident, wenn die Wahlprotokolle korrekt sind, wie ich meine Gruppe gewählt hat, werde ich nicht, und kann nicht, gegen diese objektivieren. \\
+\hline
+Rejected-response scores & COMET: 0.4782; BLEU: 1.9968. \\
+\hline
+\end{tabular}
+\end{table*}
+
+The COMET22 threshold applies only to the student hypothesis, not to the human reference. We identify the score-distribution knee using the Kneedle/elbow method \cite{b12} and apply it during preference-data construction, before DPO training. The purpose is to avoid labeling relatively high-scoring student translations as rejected examples and to focus preference learning on the lower-scoring region. Because COMET22 is an automatic quality estimator, a score below the threshold indicates lower estimated quality, not proof that every retained translation is incorrect.
+
+We fine-tune $\pi_\theta$ on $\mathcal{D}$ using DPO with LoRA \cite{b11}. DPO learns directly from pairwise preferences without a separate reward model, while LoRA updates low-rank matrices to reduce compute and memory costs. The loss for one triplet is
 \[
 \mathcal{L}_{\text{DPO}}(\pi_\theta) =
 - \log \sigma \left(
@@ -135,21 +142,9 @@ the DPO loss for a single triplet is defined as
 \right]
 \right),
 \]
-where $\pi_{\text{ref}}$ is a fixed reference model (typically a frozen copy of the pretrained student model),
-$\beta$ is a temperature parameter controlling optimization sharpness,
-and $\sigma(\cdot)$ is the sigmoid function.
-through this preference-driven fine-tuning procedure, the student model progressively aligns its translation behavior with expert-level quality in terms of fluency, adequacy, and semantic consistency.
+where $\pi_{\text{ref}}$ is a fixed reference model (typically a frozen copy of the pretrained student), $\beta$ is a temperature parameter controlling optimization sharpness, and $\sigma(\cdot)$ is the sigmoid function. The objective increases the preferred response's likelihood relative to the rejected response, measured against the fixed reference model. In this way, the model is optimized using the difference between its relative likelihoods for the two responses rather than by fitting a separately learned scalar reward.
 
-Before performing training, we apply an additional quality filter to ensure that the rejected answers in each pair are indeed poor.
-although BLEU filtering provides an initial quality control mechanism, lexical overlap alone may not fully capture semantic degradation.
-therefore, we analyze the distribution of COMET scores across candidate samples and apply the \textit{elbow method} \cite{b12} to determine a knee point in the score distribution.
-only samples with COMET scores below this knee point are retained.
-this additional filtering step ensures a clear and meaningful distinction between preferred and dispreferred outputs, thereby strengthening the preference signal used during training.
-
-After each update of the student model $\pi_\theta$, we clear the dataset $\mathcal{D}$ and initiate a new iteration of the loop. This involves refilling the dataset with new examples and subsequently updating the student model again. Throughout these iterative updates, our primary objective is to minimize the presence of translationese artifacts in the generated translations produced by the student model, thereby improving their naturalness and quality.
-
-
-
+In the full framework, the preference dataset is refreshed after each student update. Hardware constraints limited the experiments reported here to one iteration; further iterations are left for future work.
 
 \begin{figure}[t]
     \centering
@@ -158,58 +153,56 @@ After each update of the student model $\pi_\theta$, we clear the dataset $\math
     \label{fig:method}
 \end{figure}
 
- \section{evaluation}
-To empirically evaluate the effectiveness of our proposed DPO-based framework, an experiment was conducted focusing specifically on English-to-German translation. within this experimental setup, we enhanced the English-to-German translation capabilities of the gemma3-1b model using our proposed method, aiming to demonstrate improvements in translation quality and fluency. the model was evaluated using both human evaluation and automatic metric evaluation to provide a comprehensive assessment of its performance. due to hardware limitations, we executed only one loop of the proposed method in our experiments; however, the overall framework is inherently iterative and can be run for multiple loops in principle.
+ \section{Evaluation}\label{sec:eval}
+We evaluated English-to-German translation with automatic metrics and pairwise human assessment, using Gemma3-1B as the baseline. Hardware constraints limited the proposed framework to one training iteration.
 
 \subsection{Experimental Setup}
-The WMT14 dataset \cite{b13}, a standard benchmark for machine translation, was utilized for the English-to-German task. This readily available dataset provides a substantial collection of English source texts alongside their corresponding expert German translations. In preparation for our experiments, approximately 100,000 English sentences with their German translations were ready to use, signifying that the expert translator's job was already completed. While such datasets are easily found for high-resource language pairs like English-German, performing our method for an English-to-low-resource language (e.g., Persian) would involve breaking a corpus of English texts into sentences and using an expert translator, such as Deepseek-V \cite{b14}, to translate each into the target low-resource language. This dataset was chosen for its established quality and relevance to the translation task.
+We used the WMT14 English--German parallel dataset \cite{b13}. Because each English sentence is paired with a human German translation, no separate expert-translation step was required. We randomly sampled approximately 100,000 aligned pairs from the WMT14 training partition. The English sentence was the student input, the German reference was preferred, and the student's German hypothesis was the rejected response, subject to the filtering rule below. This setup uses the existing reference translation as the preferred answer rather than asking an additional translator to produce one.
 
-The baseline model for the experiment was gemma3-1b, chosen primarily due to its small size and our hardware limitations. this model is sufficiently compact to be run and trained on a laptop or using free hardware providers like Google Colab. despite its small scale, gemma3-1b demonstrates relatively good performance in multilingual translation tasks, making it a suitable choice for our experiments which focused on its balanced scale and strong baseline performance.
+The official WMT14 test partition (approximately 3,000 sentence pairs) was reserved for final evaluation and was not used for preference-pair generation, filtering, or fine-tuning. Training and test examples therefore came from disjoint partitions.
 
-Our proposed model, as detailed in the Methodology section, was performed using the WMT14 English-to-German translation data. and the trained student has been named amestris-1b.
-\footnote{available at gaokerena/amestris-1b}
- the training process, which took approximately 8 hours on 2xT4 free Kaggle GPUs, utilized specific hyperparameters documented in Table \ref{tab:training_detail}. due to the constraint of 100000 available records, we bypassed BLEU score filtering and instead focused solely on COMET score filtering. we retained samples with COMET22 scores below the determined knee point of 0.72330. since only 27000 records met this criterion—representing the minimum data threshold for the student model to demonstrate meaningful improvement—we trained the student model once using DPO combined with LoRA. this targeted filtering ensures that the DPO training is guided by high-fidelity preference signals, thereby maximizing the effectiveness of the optimization, as illustrated by the COMET22 score distribution in Figure \ref{fig:comet-histogram}.
+Gemma3-1B was selected as the baseline because its compact size made inference and fine-tuning feasible with our available hardware and accessible cloud resources, including free cloud-computing tiers. Its relatively small parameter count made it practical for the experiments while providing a baseline for measuring the effects of post-training. The conclusions should nevertheless be interpreted within this model scale rather than generalized to larger translation systems.
 
-	\begin{table}[ht]
-		\centering
-		\caption{Training hyperparameters} 
-		\begin{tabular}{|l|c|}  
-			\hline
-			Number of epochs & 1\\ \hline
-			Warmup ratio & 0.03\\ \hline
-            \( \beta \) (DPO's temperature parameter) & 0.1 \\ \hline
-            Number of gradient accumulation steps & 4 \\ \hline
-            LoRA rank & 32 \\ \hline
-            LoRA alpha & 32 \\ \hline
-            LoRA dropout & 0.05 \\ \hline
-            Target modules & all linear \\ \hline
-            BLEU score threshold & let all pass \\ \hline
-            Preference dataset threshold& 27000 \\ \hline
-      
-		\end{tabular}
-		\label{tab:training_detail}
-	\end{table}
+From the 100,000 candidates, we retained hypotheses with COMET22 scores below 0.72330, the elbow threshold, and did not apply BLEU-based filtering. The threshold was applied to the student hypothesis, not the human reference. Filtering excluded approximately 73,000 candidates (73\%) and retained approximately 27,000 pairs (27\%) for LoRA-based DPO fine-tuning. Each retained pair therefore contains both the human reference and the low-scoring hypothesis: the latter remains in training as the rejected response. The reduction in dataset size does not by itself establish a downstream benefit from filtering. The resulting model is referred to as \textit{amestris-1b-dpo}.\footnote{Available at huggingface.co/gaokerena/amestris-1b-dpo} Training took approximately eight hours on two Kaggle T4 GPUs. Table~\ref{tab:training_detail} lists the hyperparameters, and Figure~\ref{fig:comet-histogram} shows the score distribution.
 
+\begin{table}[ht]
+    \centering
+    \caption{Training hyperparameters.}
+    \begin{tabular}{|l|c|}
+        \hline
+        Number of epochs & 1 \\ \hline
+        Warmup ratio & 0.03 \\ \hline
+        $\beta$ (DPO temperature parameter) & 0.1 \\ \hline
+        Gradient accumulation steps & 4 \\ \hline
+        LoRA rank & 32 \\ \hline
+        LoRA alpha & 32 \\ \hline
+        LoRA dropout & 0.05 \\ \hline
+        Target modules & All linear layers \\ \hline
+        BLEU filtering & Not applied \\ \hline
+        COMET22 threshold & 0.72330 \\ \hline
+        Preference pairs retained & 27,000 \\ \hline
+    \end{tabular}
+    \label{tab:training_detail}
+\end{table}
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\linewidth]{fig2.jpg}
-    \caption{Histogram of comet score for training data}
+    \caption{COMET22 scores of student-generated translation hypotheses used for preference-pair construction. The knee threshold (0.72330) retains lower-scoring hypotheses as rejected responses and excludes higher-scoring candidates.}
     \label{fig:comet-histogram}
 \end{figure}
 
 \subsection{Automatic Evaluation}
-The effectiveness of the proposed DPO-based framework was evaluated using several automatic metrics commonly used to assess machine translation quality. As shown in Table \ref{tab:results}, \textit{gemma3-1b} was used as the baseline model, while the fine-tuned model obtained through our approach is referred to as \textit{amestris-1b}. Table \ref{tab:results} presents a comparative summary of the performance of these two models.
+We evaluated \textit{gemma3-1b} and the DPO-fine-tuned model, \textit{amestris-1b-DPO}, on the held-out WMT14 test partition using six automatic metrics (Table~\ref{tab:results}).
 
-In the table, an up-arrow ($\uparrow$) indicates that a higher score reflects better translation quality, whereas a down-arrow ($\downarrow$) indicates that a lower score is preferable. Each metric captures a different aspect of translation performance. BLEU measures the degree of n-gram overlap between the generated translation and the reference, and is often interpreted as a measure of lexical precision. COMET\_22, which is a reference-based neural evaluation metric trained on WMT22 human judgment data \cite{b15}, assesses translation quality by considering the source sentence, the system output, and the human reference, and it is designed to correlate strongly with human evaluations of adequacy and fluency. In contrast, COMET\_KIWI22 is a reference-free quality estimation metric based on the COMET-KIWI framework and WMT22 data, which predicts translation quality using only the source sentence and the generated translation, making it particularly useful in scenarios where reference translations are unavailable. METEOR \cite{b16} extends lexical matching by considering both precision and recall, while also accounting for stemming and synonym matching, which makes it more sensitive to acceptable lexical variations. TER (Translation Edit Rate) \cite{b17} evaluates how many edits, such as insertions, deletions, substitutions, and shifts, are required to transform the system output into the reference translation; therefore, lower TER values indicate better translations. chrF++ \cite{b18} computes an F-score over character n-grams, making it especially useful for morphologically rich languages and for capturing subtle variations in word formation that may not be adequately reflected by word-level metrics alone.
-
+Higher scores are better for BLEU \cite{b10}, COMET22, COMET\_KIWI22, METEOR \cite{b16}, and chrF++ \cite{b18}; lower TER \cite{b17} is better. BLEU measures n-gram overlap between the system output and reference. COMET22 is a reference-based neural metric trained on WMT22 human judgments \cite{b15} and evaluates the source, output, and reference, whereas COMET\_KIWI22 estimates quality from the source and output without requiring a reference. METEOR combines lexical precision and recall with stemming and synonym matching; TER measures the edit operations needed to transform an output into the reference; and chrF++ computes an F-score over character n-grams, capturing some morphological and orthographic variation.
 
 \begin{table}[ht]
     \centering
-    \caption{Comparative performance results}
+    \caption{Automatic evaluation results on the WMT14 test set.}
     \begin{tabular}{|l|c|c|}
         \hline
-          & gemma3-1b (baseline) & amestris-1b-DPO (ours) \\ \hline
+        & Gemma3-1B (baseline) & Amestris-1B-DPO \\ \hline
         BLEU $\uparrow$ & \textbf{0.1572} & 0.1500 \\ \hline
         COMET22 $\uparrow$ & 0.7698 & \textbf{0.7810} \\ \hline
         COMET\_KIWI22 $\uparrow$ & 0.7031 & \textbf{0.7476} \\ \hline
@@ -219,76 +212,55 @@ In the table, an up-arrow ($\uparrow$) indicates that a higher score reflects be
     \end{tabular}
     \label{tab:results}
 \end{table}
-The results demonstrate that amestris-1b achieves consistent improvements over the baseline across most metrics, specifically showing gains in COMET22, COMET\_KIWI22, METEOR, chrF++, and a reduction in the TER score, which indicates a more efficient translation process. While a slight decrease in BLEU was observed, this could be attributed to the absence of BLEU score filtering during performing our method. despite this, the strong performance across neural and character-based metrics suggests that the DPO fine-tuning successfully improved semantic adequacy and fluency, even when exact n-gram overlap with the reference was slightly lower. notably, these gains were achieved with only 27k preference pairs, yielding performance improvements of 0.012 in COMET22, 0.0446 in COMET\_KIWI22, 0.0108 in METEOR, 0.0144 in TER, and 0.0189 in chrF++. This is a significant outcome for a post-training framework. Furthermore, a look at the gemma3-1b model’s (our baseline) COMET22 score distribution in Figure \ref{fig:comet-histogram} reveals a bimodal distribution. the first peak, concentrated around lower COMET22 scores, appears to be a translation artifact of the baseline model, which our method has effectively mitigated.
+
+DPO improves five metrics over the baseline: COMET22 (+0.0112), COMET\_KIWI22 (+0.0445), METEOR (+0.0108), chrF++ (+0.0189), and TER (a decrease of 0.0144). BLEU is lower (0.1500 versus 0.1572), so the gains are not uniform. These changes indicate improvements in several semantic, lexical, and edit-based measures, but not in n-gram overlap. In particular, the reference-free COMET\_KIWI22 increase suggests a gain under a metric that does not use the reference at scoring time, while the BLEU decrease highlights a trade-off across evaluation criteria. Because this checkpoint was trained on the 27,000 COMET22-filtered pairs and no matched unfiltered-DPO condition was evaluated, these results measure the complete filtered-data pipeline but do not isolate the effect of filtering. The BLEU decrease likewise cannot be attributed to the absence of BLEU-based filtering.
+
+Figure~\ref{fig:comet-histogram} shows a smaller lower-scoring group and a larger higher-scoring concentration. The threshold (0.72330) retains the former as rejected responses and excludes the latter, aiming to avoid treating relatively high-scoring hypotheses as negative examples. The histogram is used to motivate the knee-point selection, but its shape alone does not establish that the retained and excluded groups are uniformly erroneous and correct, respectively. The histogram and COMET22 scores are automatic estimates, not proof that every retained candidate is erroneous or every excluded candidate is correct. The filtering decisions were not independently validated by human annotation (Section~\ref{sec:future}).
 
 \subsection{Human Evaluation}
-To complement the automatic evaluation metrics, we conducted a manual qualitative analysis of the translations generated by the baseline gemma3-1b model and the LoRA-adapted amestris-1b-DPO model. 
-A domain expert rigorously evaluated the translation quality of both systems across all test instances. 
-The complete evaluation dataset, alongside the expert's comprehensive annotations for each example, is publicly available.
-\footnote{github.com/Mehrdadghassabi/Amestris/assets}
-In the following discussion, we analyze specific examples, referencing them by the corresponding row numbers in the aforementioned repository.
+We conducted pairwise human evaluation of the baseline \textit{gemma3-1b} and \textit{amestris-1b-dpo} on held-out WMT14 instances. One evaluator, an English--German expert with the language expertise required to assess the source and target texts, assessed each English source and its two German translations. Outputs were anonymized, and model identities were concealed; the evaluator was not told which system produced either candidate.
 
-as illustrated in Figure \ref{fig:win-rate}, the expert evaluation revealed that amestris-1b-DPO outperformed the baseline in $22.2\%$ of the cases, whereas gemma3-1b yielded superior translations in $19.6\%$ of the instances. 
-in the remaining $58.2\%$ of the evaluation set, the models demonstrated comparable quality. 
-this represents a notable achievement, particularly given the highly constrained volume of preference data utilized during the Direct Preference Optimization (DPO) alignment phase. 
-however, it also highlights the contextual inefficiencies of DPO in translation tasks, a phenomenon further explored in the ablation study section below, where we discuss specific examples to isolate the precise error categories rectified or altered by DPO training.
+The evaluator considered semantic adequacy with respect to the English source, completeness, grammatical correctness, fluency, and lexical appropriateness, and assigned one of three judgments: first output better, second output better, or comparable. Each pair was judged as a whole rather than by assigning separate numerical scores to each criterion. After annotation, the anonymized outputs were mapped back to their systems to calculate preference rates. Evaluation examples and annotations are public.\footnote{github.com/Mehrdadghassabi/Amestris/assets} Example references below use the released data's row numbers.
 
-Our analysis indicates that while the improvements introduced by DPO are not uniformly distributed across the dataset, a substantial portion of the evaluation set exhibits distinct gains in translation quality. 
-the most consistent improvement was observed in the completeness of the target text. 
-the baseline system frequently left segments of the source sentence untranslated or produced mixed English-German outputs. 
-conversely, the LoRA-adapted model consistently generated fully realized German translations. 
-this robustness was particularly evident in longer, syntactically complex sentences such as row 30 where the amestris-1b-DPO outputs tracked the overarching structure of the reference text more closely.
+As shown in Figure~\ref{fig:win-rate}, the evaluator preferred DPO in 22.2\% of cases and the baseline in 19.6\%; 58.2\% were judged comparable. The 2.6-percentage-point difference indicates only a modest preference for DPO. The large comparable category also suggests that many outputs were judged similar in overall quality rather than clearly favoring either system. Given the single-evaluator protocol, these percentages are descriptive and do not establish a generalizable human preference advantage.
 
-The amestris-1b-DPO model also demonstrated marked advancements in target-language fluency. 
-compared to the baseline, it regularly generated more natural word orders, smoother clause structures, and more idiomatic lexical selections. 
-these improvements were especially pronounced in journalistic prose and sentences containing institutional or political terminology. 
-for instance, in rows 34, the amestris-1b-DPO model's outputs are substantially more fluent and align closely with the phrasing of the reference translation, even when minor imperfections persist. 
-similarly, row 37 displays a significantly clearer and more natural rendering than the baseline.
+Selected examples suggest occasional gains in completeness: in row 30, the baseline leaves parts of the source untranslated or mixes English and German, whereas the DPO output provides a more complete German rendering and more closely follows the reference sentence's overall structure.
 
-Another key area of improvement concerns lexical precision and domain-specific terminology. 
-the DPO-aligned model frequently selected superior terminology within specialized domains, including healthcare, public administration, education, and politics. 
-medical and institutional terms were translated with higher accuracy, and the model exhibited an improved command of German compound nouns. 
-row 10 highlights this lexical precision, though it simultaneously demonstrates that vocabulary enhancements are not always accompanied by strict numerical fidelity. 
-furthermore, the qualitative findings suggest that amestris-1b-DPO occasionally improves semantic adequacy by preserving critical contextual relationships that were otherwise degraded or omitted by the baseline. 
-certain translations maintained causal relations, temporal frames, and discourse structures more effectively, yielding outputs that were more coherent and faithful to the source text. 
-this trend is visible in rows 24, where the amestris-1b-DPO outputs were judged to be closer to the reference despite minor residual flaws.
+Rows 34 and 37 show occasional fluency improvements, including more natural word order, smoother clause structures, and more idiomatic lexical choices. These are observations from individual examples and do not indicate that fluency improved uniformly across the test set.
 
-Despite these demonstrable gains, the manual evaluation exposed several persistent vulnerabilities. 
-a significant number of examples (particularly in the latter portion of the dataset) exhibited hallucinated names, dates, and numerical values, occasionally compromising factual integrity. 
-we also observed frequent instances of named-entity corruption, wherein personal names, geographical locations, or institutional titles were incorrectly translated or distorted. 
-as illustrated in row 2973, named-entity handling can remain fragile even when the surrounding target output is highly fluent.
+The evaluator's annotations also identify examples of improved lexical selection and domain-specific terminology. Row 10 illustrates a more appropriate lexical choice, but also shows that better terminology does not guarantee numerical fidelity. In row 24, the DPO output was judged closer to the reference in preserving contextual relationships, although it retained some imperfections.
 
-a particularly problematic phenomenon emerged in later segments of the dataset, where the amestris-1b-DPO model occasionally generated a fluent German translation that corresponded to an adjacent or neighboring sentence rather than the actual source prompt. 
-these sentence-shift errors severely degraded translation adequacy. 
-additionally, a minor subset of examples exhibited severe decoding failures, including malformed strings and entirely unaligned text generation. 
-in summary, the human evaluation confirms that DPO-LoRA adaptation yields tangible dividends in translation quality, chiefly through enhanced completeness, superior fluency, and more precise lexical selection. 
-however, these benefits are counterbalanced by a discernible reduction in factual robustness and contextual consistency across specific subsets of the data.
+The human evaluation also identified errors. Several outputs contained hallucinated names, dates, or numerical values. Other examples showed corruption of personal names, geographical locations, and institutional titles; row 2973 illustrates that named entities may remain incorrect even when the surrounding translation is fluent. In some cases, the model produced a fluent German sentence corresponding to an adjacent source sentence rather than the current input, substantially reducing adequacy. A small number of outputs also contained decoding failures, malformed strings, or text not aligned with the input.
 
-
+Overall, the examples show possible improvements in completeness, fluency, and lexical choice, alongside factual, named-entity, and sentence-alignment errors. The examples therefore illustrate both potential strengths and remaining failure modes; they should not be interpreted as a systematic error analysis or as evidence that the model improves every aspect of translation. Together with the modest preference difference and single-evaluator design, these findings qualify the automatic results rather than establish a consistent human-evaluated advantage for DPO.
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=0.8\linewidth]{fig3.png}
-    \caption{amestris-1b-dpo win-rate against gemma3-1b}
+    \caption{Pairwise human-evaluation preferences for Amestris-1B-DPO and Gemma3-1B.}
     \label{fig:win-rate}
 \end{figure}
 
- \section{Ablation Study}
-To better understand the contribution of the preference-based learning components within our framework, we conducted an ablation study comparing the performance of standard Supervised Fine-Tuning (SFT), Direct Preference Optimization (DPO), and a combined DPO followed by SFT (DPO+SFT) approach.
+\section{Ablation Study}
+To examine the relative contributions of preference-based training and supervised fine-tuning, we compared the baseline, standalone DPO, standalone SFT, and sequential DPO followed by SFT (DPO+SFT).
+\footnote{available at huggingface.co/gaokerena/amestris-1b-dpo-sft and huggingface.co/gaokerena/amestris-1b-sft}
+The configurations were assessed using the same automatic metrics and, as described in the experimental setup, the same underlying dataset setting.
 
-Luu et al. \cite{b5} asserted that the DPO objective yields almost no meaningful effect on training in translation tasks, demonstrating that it often results in either a negligible improvement or a minor performance decrease over baseline models when evaluated via automatic metrics. This suggests that, in many settings, standard SFT serves as a more stable optimization strategy. While SFT trains the model directly on the "question + preferred answer" to maximize likelihood, DPO introduces a preference-based loss that incorporates rejected samples. However, as noted by Luu et al., this added complexity frequently fails to translate into superior performance gains.
+Luu et al. \cite{b5} provide an external reference for DPO without COMET screening of rejected hypotheses. Their preliminary experiments (Section 4.2, Table 3) compare five SFT/DPO allocations totaling 20,000 examples: 20k/0, 15k/5k, 10k/10k, 5k/15k, and 0/20k. SFT-only (20k/0) performs strongest overall on FLORES-200 dev and NTREX. With 15k SFT and 5k DPO, results are mixed: on FLORES-200 dev, COMET22 increases from 79.41 to 79.54 and chrF++ from 42.93 to 43.20, while BLEU falls from 10.61 to 10.53 and BLEURT from 67.22 to 66.89. On NTREX, chrF and chrF++ rise slightly (46.34 to 46.42 and 41.09 to 41.11), while BLEU, COMET22, COMETKIWI22, and BLEURT decline. Their DPO-only setting is below SFT-only on all six reported metrics on both sets. This suggests that DPO over generated hypotheses may provide a weak or noisy signal in that setting, but does not show that COMET screening would solve the problem. Importantly, Luu et al. do not screen rejected hypotheses with COMET at pair-construction time, although they separately clean their synthetic training corpus and use quality estimation to select some evaluation documents. Their language pair, model, and data regime also differ from ours. Vajda et al. \cite{b8}, by contrast, report COMET improvements from DPO for English-to-Slovene, illustrating that results vary by task and preference construction. In our English-to-German experiment, filtered DPO improves five of six metrics over the baseline; however, without a matched unfiltered condition, we cannot attribute those gains to COMET22 filtering. SFT maximizes the likelihood of reference translations, whereas DPO additionally learns from rejected responses.
 
-In contrast, our approach addresses this limitation by focusing on a crucial insight: ensuring that rejected candidates represent genuinely severe mistakes is vital for effective preference learning. DPO should fundamentally serve to rectify distinct, low-quality errors rather than subtle variations. To achieve this, we apply rigorous filtering to the collected preference pairs, employing a COMET-based elbow method to isolate samples with substantial semantic degradation. This filtering step guarantees that the rejected answers provide a highly informative, starkly negative signal suitable for robust preference optimization.
+Table~\ref{tab:results1} shows that SFT outperforms standalone DPO on five metrics (BLEU, COMET22, COMET\_KIWI22, METEOR, and chrF++); DPO has the best TER. DPO+SFT achieves the best scores on the other five metrics, while DPO retains the best TER. Compared with SFT alone, sequential DPO+SFT improves five metrics but has a slightly higher (worse) TER. Thus, DPO's gains over the baseline do not mean it outperforms SFT. The results suggest that DPO may provide a complementary signal when followed by SFT in this setup, but no configuration is best on every metric, and the ranking may differ on other datasets or models.
 
-To evaluate the impact of this filtering strategy across different training configurations, we conducted a controlled experiment where the dataset composition and hyperparameters were kept identical. We evaluated three distinct setups: replacing the DPO module with standard SFT alone, utilizing DPO alone, and applying a sequential DPO+SFT training pipeline. As shown in Table \ref{tab:results1}, while the SFT-trained model achieves only a slight improvement over the standalone DPO model, the hybrid DPO+SFT approach yields the highest overall performance, surpassing SFT alone. This result demonstrates that when negative samples are aggressively filtered to ensure they represent truly poor responses, DPO provides an exceptionally strong corrective signal that, when combined with SFT, substantially enhances translation quality.
+COMET22 filtering was intended to pair human references with lower-scoring student hypotheses and thereby provide a more focused negative signal. It reduced approximately 100,000 candidates to 27,000 pairs, but this reduction is only a data-selection result and does not establish that the retained data improve DPO. We neither trained a matched DPO model on the full unfiltered candidate set nor independently validated the filtering decisions with human assessment; the present ablation therefore does not isolate filtering's contribution.
+
+Luu et al.'s results are relevant external evidence, not a substitute for this missing ablation. For the 15k-SFT/5k-DPO allocation, COMET22 changes from 79.41 to 79.54 on FLORES-200 dev but from 77.55 to 77.32 on NTREX, while BLEU decreases on both sets; their DPO-only setting is also weaker than SFT-only. The findings are useful as context because they show that adding DPO to an SFT system does not guarantee improvements when rejected hypotheses are not screened in the same way. However, the comparison remains external: language pair, model, data, and experimental settings differ. These findings motivate testing whether lower-quality rejected hypotheses provide a more informative preference signal. Because Luu et al. do not report a matched COMET-filtered condition, their results cannot quantify the effect of filtering. That requires otherwise identical DPO models trained on the same candidate pool with and without COMET screening.
 
 \begin{table}[ht]
     \centering
     \caption{Comparison of baseline training with DPO and SFT}
     \begin{tabular}{|l|c|c|c|c|}
         \hline
-         & gemma3-1b& amestris-1b& amestris-1b & amestris-1b\\ 
-         & (baseline) & -DPO& -SFT & -DPO-SFT\\ \hline
+         & Gemma3-1b& Amestris& Amestris& Amestris-1b\\ 
+         & (baseline) & -1b-DPO& -1b-SFT & -DPO-SFT\\ \hline
         BLEU $\uparrow$ & 0.1572 & 0.1500  &0.1701 &  \textbf{0.1718} \\ \hline
         COMET22 $\uparrow$ & 0.7698 & 0.7810 & 0.8007  & \textbf{0.8119}\\ \hline
         COMET &  & & &  \\ 
@@ -300,16 +272,18 @@ To evaluate the impact of this filtering strategy across different training conf
     \label{tab:results1}
 \end{table}
 
- \section{future research}
-While the combination of backtranslation and Direct Preference Optimization (DPO) has shown promising results in enhancing neural machine translation, several important directions remain for future exploration.
+\section{Future Work}\label{sec:future}
+The findings are mixed: filtered DPO improves five metrics over the baseline, but SFT outperforms standalone DPO on five metrics, and DPO+SFT leads on five. Human evaluation shows only a 2.6-percentage-point preference difference, with 58.2\% of outputs judged comparable. The results therefore do not establish standalone DPO as the best strategy, isolate the effect of COMET22 filtering, or demonstrate a substantial human preference advantage.
 
-First, domain adaptation constitutes a high-impact extension. Applying the backtranslation--DPO pipeline to specialized domains (e.g., medical, legal, or technical translation) with expert-guided preference data can significantly improve terminological accuracy and reduce hallucinations.
+First, the framework should be tested in specialized domains, including medical, legal, and technical translation, to assess its ability to improve domain-specific terminology, preserve specialized meaning, and reduce translation errors. These settings would also help determine whether COMET22-based selection behaves consistently when the vocabulary and error patterns differ from those in general-domain WMT14 data.
 
-Second, further research is needed on preference pair construction and DPO variants. Exploring different sampling strategies, alternative preference optimization methods (e.g., SimPO \cite{b19}, ORPO \cite{b20}), and parameter-efficient techniques (e.g., QLoRA \cite{b21}) may yield more stable and computationally efficient training.
+Second, the filtering stage needs independent validation and threshold-sensitivity analysis. The 27,000 training pairs were selected automatically with the COMET22 elbow threshold; we did not obtain human judgments for retained and discarded candidates, compare those judgments with COMET22, or retrain using alternative thresholds or selection rules. The human evaluation reported here assesses final model outputs, not the filtering decisions, and therefore cannot be used as independent evidence that the filtering labels agree with human assessment. We also did not compare matched DPO models trained on filtered and unfiltered versions of the same candidate pool. Thus, the observed gains should be attributed to the complete DPO pipeline, not specifically to COMET22 filtering. Future experiments should (i) have qualified annotators assess representative retained and discarded pairs, (ii) compare standard DPO on unfiltered pairs with COMET-filtered DPO, SFT-only, and the pretrained baseline under matched data and training budgets, and (iii) compare the elbow threshold with fixed COMET cutoffs, quantile-based thresholds, and size-matched random selection. Results should be reported for COMET and BLEU, as well as the other metrics, to reveal threshold sensitivity and metric trade-offs.
 
-Overall, the synergy between backtranslation and DPO offers a flexible and powerful framework that can be extended toward more robust, domain-specific, and accessible machine translation systems.
+Third, human evaluation should involve multiple independent bilingual evaluators. Although our evaluator was an English--German expert and model identities were concealed, a single rater cannot provide inter-annotator agreement or establish that the observed preferences are stable across annotators. Future studies should also randomize output order, use a consistent evaluation interface, and report agreement alongside preference rates.
 
-	\begin{thebibliography}{00}
+Finally, future work should test alternative pair-sampling strategies, preference objectives such as SimPO \cite{b19} and ORPO \cite{b20}, and parameter-efficient methods such as QLoRA \cite{b21}. The contributions of back-translation, DPO, and SFT should also be examined across more language pairs, datasets, and evaluation protocols.
+
+\begin{thebibliography}{00}
               \bibitem{b1}
               Stahlberg, Felix. "Neural machine translation: A review." Journal of Artificial Intelligence Research 69 (2020): 343-418.
                \bibitem{b2}
