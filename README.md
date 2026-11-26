@@ -31,7 +31,7 @@ notice that in all of the mentioned metrics higer value means better performance
 
 |                       | gemma3-1b (baseline) | amestris-1b-dpo |
 |-----------------------|--------------------|---------------------------|
-| **BLEU**  | **0.1572**           | 15.00                  | 
+| **BLEU**  | **0.1572**           | 0.1500                  | 
 | **COMET22**      | 0.7698          | **0.7810**        | 
 | **COMET_KIWI22**      | 0.7031              | **0.7476**     | 
 | **METEOR**     | 0.3861          | **0.3969**        | 
